@@ -7,6 +7,8 @@ Suppose we have `example.com` hosting our `gateway`, and we have `app1.example.c
 `app2.example.com` as the clients. Each client has its certificate pair, annotated with its `DNS`,
 encoded as the certificate's `SAN`.
 
+![routing-peers](https://user-images.githubusercontent.com/73152/161419808-888644a4-8217-46ec-9d4c-874793c6ca0a.png)
+
 As an example, the following is the SAN of `app1.example.com` client certificate.
 
 ```
@@ -35,7 +37,7 @@ The route matching entry for `app1.example.com` is done as the following:
                             cluster: service_httpbin
 ```
 
-With the given ['config.yaml'](./config.yaml),
+With the given [`config.yaml`](./config.yaml),
 
 > Note: Since I'm lazy, you need to add: `127.0.0.1 example.com` entry to your `/etc/hosts` to make the DNS resolution works.
 
@@ -117,7 +119,7 @@ $ curl https://example.com:10000 --cacert ca.crt --cert app2.example.com.crt --k
 }
 ```
 
-Yes, now it is `anything/app2`!
+Yes, now it is `/anything/app2`!
 
 ## Inspecting the certificate
 
