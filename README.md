@@ -178,6 +178,13 @@ $ ./hash.js app1.example.com.crt
 13ee0d38e5517a257b9f2e9f38b0c9543f8312a8f40c32b5ad3358c9f1a6c9b3
 ```
 
+Or, you can surely do it in Go:
+
+```console
+$ go run hash.go app1.example.com.crt
+13ee0d38e5517a257b9f2e9f38b0c9543f8312a8f40c32b5ad3358c9f1a6c9b3
+```
+
 ## Creating the certificates
 
 Since I'm a big fan of `step`, these certificates are generated using the `step` CLI.
