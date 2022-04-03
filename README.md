@@ -49,7 +49,7 @@ $ ~/.func-e/versions/1.21.0/bin/envoy -c config.yaml
 
 And in another tab, by using the `app1.example.com` client certificate:
 
-```
+```console
 $ curl https://example.com:10000 --cacert ca.crt --cert app1.example.com.crt --key app1.example.com.key -v
 < HTTP/1.1 200 OK
 < date: Sun, 03 Apr 2022 08:02:26 GMT
