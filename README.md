@@ -7,7 +7,7 @@ Suppose we have `example.com` hosting our `gateway`, and we have `app1.example.c
 `app2.example.com` as the clients. Each client has its certificate pair, annotated with its `DNS`,
 encoded as the certificate's `SAN`.
 
-![routing-peers](https://user-images.githubusercontent.com/73152/161419808-888644a4-8217-46ec-9d4c-874793c6ca0a.png)
+![routing-peers](https://user-images.githubusercontent.com/73152/161420422-e0647db2-6aa5-4750-a155-d9a5f7fc2400.png)
 
 As an example, the following is the SAN of `app1.example.com` client certificate.
 
