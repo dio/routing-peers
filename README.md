@@ -126,7 +126,7 @@ Yes, now it is `/anything/app2`!
 You can use [`step`](https://smallstep.com/docs/step-cli) CLI to inspect the certificates.
 
 ```console
-$ step inspect app1.example.com.crt
+$ step certificate inspect app1.example.com.crt
 Certificate:
     Data:
         Version: 3 (0x2)
