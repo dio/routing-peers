@@ -1,0 +1,196 @@
+admin:
+  address:
+    socket_address:
+      protocol: TCP
+      address: 0.0.0.0
+      port_value: 9901
+static_resources:
+  listeners:
+    - name: listener_0
+      address:
+        socket_address:
+          protocol: TCP
+          address: 0.0.0.0
+          port_value: 10000
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                forward_client_cert_details: APPEND_FORWARD
+                set_current_client_cert_details:
+                  dns: true
+                scheme_header_transformation:
+                  scheme_to_overwrite: https
+                stat_prefix: ingress_http
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: local_service
+                      domains: ["*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                            headers:
+                              - name: x-forwarded-client-cert
+                                exact_match: Hash=94b0743a0159e4003ed1d84303bda2db53693f3b635c4a23447f9df6657444ac;DNS=api-client.customer01.com
+                          route:
+                            cluster: customer01
+                        - match:
+                            prefix: "/"
+                            headers:
+                              - name: x-forwarded-client-cert
+                                exact_match: Hash=7f874453537499e6816a1b3ea5dbbfc5728ccadcd1c18717b16ea3783e3c0936;DNS=api-client.customer02.com
+                          route:
+                            cluster: customer02
+                        - match:
+                            prefix: "/"
+                            headers:
+                              - name: x-forwarded-client-cert
+                                exact_match: Hash=00e018b8b62ff971dd9668ef3828aac05dd12f2d6f1e6e617f7e18c46b009564;DNS=api-client.customer03.com
+                          route:
+                            cluster: customer03
+                        - match:
+                            prefix: "/"
+                            headers:
+                              - name: x-forwarded-client-cert
+                                exact_match: Hash=3780d91ade6940c5780df86df330bafb6d7884fe9173988021fffda6f8d9487c;DNS=api-client.customer04.com
+                          route:
+                            cluster: customer04
+                http_filters:
+                  - name: envoy.filters.http.lua
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+                      inline_code: |
+                        function envoy_on_request(request_handle)
+                          local current = request_handle:headers():get(":authority")
+                          request_handle:headers():replace(":path", "/anything" .. request_handle:headers():get(":path"))
+                          request_handle:headers():replace(":authority", "hello.com:10001")
+                        end
+                        function envoy_on_response(response_handle)
+                        end
+
+                  - name: envoy.filters.http.dynamic_forward_proxy
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.dynamic_forward_proxy.v3.FilterConfig
+                      dns_cache_config:
+                        name: dynamic_forward_proxy_cache_config
+                        dns_lookup_family: V4_ONLY
+                  - name: envoy.filters.http.router
+
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              require_client_certificate: true
+              common_tls_context:
+                validation_context:
+                  trusted_ca:
+                    filename: ca.crt
+                  verify_certificate_hash:
+                    - 94b0743a0159e4003ed1d84303bda2db53693f3b635c4a23447f9df6657444ac
+                    - 7f874453537499e6816a1b3ea5dbbfc5728ccadcd1c18717b16ea3783e3c0936
+                    - 00e018b8b62ff971dd9668ef3828aac05dd12f2d6f1e6e617f7e18c46b009564
+                    - 3780d91ade6940c5780df86df330bafb6d7884fe9173988021fffda6f8d9487c
+                tls_certificates:
+                  - certificate_chain:
+                      filename: example.com.crt
+                    private_key:
+                      filename: example.com.key
+
+  clusters:
+    - name: customer01
+      connect_timeout: 1s
+      lb_policy: CLUSTER_PROVIDED
+      cluster_type:
+        name: envoy.clusters.dynamic_forward_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+          dns_cache_config:
+            name: dynamic_forward_proxy_cache_config
+            dns_lookup_family: V4_ONLY
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          common_tls_context:
+            validation_context:
+              trusted_ca:
+                filename: ca.crt
+            tls_certificates:
+              - certificate_chain:
+                  filename: customer01.example.com.crt
+                private_key:
+                  filename: customer01.example.com.key
+
+    - name: customer02
+      connect_timeout: 1s
+      lb_policy: CLUSTER_PROVIDED
+      cluster_type:
+        name: envoy.clusters.dynamic_forward_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+          dns_cache_config:
+            name: dynamic_forward_proxy_cache_config
+            dns_lookup_family: V4_ONLY
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          common_tls_context:
+            validation_context:
+              trusted_ca:
+                filename: ca.crt
+            tls_certificates:
+              - certificate_chain:
+                  filename: customer02.example.com.crt
+                private_key:
+                  filename: customer02.example.com.key
+
+    - name: customer03
+      connect_timeout: 1s
+      lb_policy: CLUSTER_PROVIDED
+      cluster_type:
+        name: envoy.clusters.dynamic_forward_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+          dns_cache_config:
+            name: dynamic_forward_proxy_cache_config
+            dns_lookup_family: V4_ONLY
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          common_tls_context:
+            validation_context:
+              trusted_ca:
+                filename: ca.crt
+            tls_certificates:
+              - certificate_chain:
+                  filename: customer03.example.com.crt
+                private_key:
+                  filename: customer03.example.com.key
+
+    - name: customer04
+      connect_timeout: 1s
+      lb_policy: CLUSTER_PROVIDED
+      cluster_type:
+        name: envoy.clusters.dynamic_forward_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+          dns_cache_config:
+            name: dynamic_forward_proxy_cache_config
+            dns_lookup_family: V4_ONLY
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          common_tls_context:
+            validation_context:
+              trusted_ca:
+                filename: ca.crt
+            tls_certificates:
+              - certificate_chain:
+                  filename: customer04.example.com.crt
+                private_key:
+                  filename: customer04.example.com.key

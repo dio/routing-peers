@@ -117,7 +117,7 @@ $ curl https://example.com:10000 --cacert ca.crt --cert app2.example.com.crt --k
 }
 ```
 
-Yes, now it is `anything/app2`!
+Yes, now it is `/anything/app2`!
 
 ## Inspecting the certificate
 
