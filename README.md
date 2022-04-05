@@ -3,64 +3,132 @@
 This is an interesting use-case, where we have a "gateway" that routes requests based on the
 extracted [`x-forwarded-client-cert`](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_conn_man/headers#x-forwarded-client-cert).
 
-Suppose we have `example.com` hosting our `gateway`, and we have `app1.example.com` and
-`app2.example.com` as the clients. Each client has its certificate pair, annotated with its `DNS`,
-encoded as the certificate's `SAN`.
+Suppose we have four clients, each of them has a certificate pair (`api-client.customer0{1..4}.com.{crt,key}`).
 
-![routing-peers](https://user-images.githubusercontent.com/73152/161420422-e0647db2-6aa5-4750-a155-d9a5f7fc2400.png)
-
-As an example, the following is the SAN of `app1.example.com` client certificate.
-
-```
-            X509v3 Subject Alternative Name:
-                DNS:app1.example.com
-```
-
-And make sure you have "Client Authentication" as one of its key usages:
-
-```
-            X509v3 Extended Key Usage:
-                Server Authentication, Client Authentication
-```
-
-The route matching entry for `app1.example.com` is done as the following:
+Each client connects to gateway, and terminated (validated via mTLS, with provided validation contexts: trusted CA and hash).
 
 ```yaml
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              require_client_certificate: true
+              common_tls_context:
+                validation_context:
+                  trusted_ca:
+                    filename: ca.crt
+                  verify_certificate_hash:
+                    - 94b0743a0159e4003ed1d84303bda2db53693f3b635c4a23447f9df6657444ac
+                    - 7f874453537499e6816a1b3ea5dbbfc5728ccadcd1c18717b16ea3783e3c0936
+                    - 00e018b8b62ff971dd9668ef3828aac05dd12f2d6f1e6e617f7e18c46b009564
+                    - 3780d91ade6940c5780df86df330bafb6d7884fe9173988021fffda6f8d9487c
+                tls_certificates:
+                  - certificate_chain:
+                      filename: example.com.crt
+                    private_key:
+                      filename: example.com.key
+
+```
+
+The extracted hash and SAN then being used as the routing cue, for example for `customer01`:
+
+```yaml
+                      routes:
                         - match:
                             prefix: "/"
                             headers:
                               - name: x-forwarded-client-cert
-                                exact_match: Hash=13ee0d38e5517a257b9f2e9f38b0c9543f8312a8f40c32b5ad3358c9f1a6c9b3;DNS=app1.example.com
+                                exact_match: Hash=94b0743a0159e4003ed1d84303bda2db53693f3b635c4a23447f9df6657444ac;DNS=api-client.customer01.com
                           route:
-                            prefix_rewrite: "/anything/app1"
-                            host_rewrite_literal: httpbin.org
-                            cluster: service_httpbin
+                            cluster: customer01
 ```
 
-With the given [`config.yaml`](./config.yaml),
+The "upstream" cluster is a "forward-proxy" which has `customer01`'s "trusted" (internal) client
+certificate-pair (`customer0{1..4}.example.com.{crt,key}`)
 
-> Note: Since I'm lazy, you need to add: `127.0.0.1 example.com` entry to your `/etc/hosts` to make the DNS resolution works.
-
-```console
-$ pwd
-path/to/this/repository
-$ ~/.func-e/versions/1.21.0/bin/envoy -c config.yaml
+```yaml
+    - name: customer01
+      connect_timeout: 1s
+      lb_policy: CLUSTER_PROVIDED
+      cluster_type:
+        name: envoy.clusters.dynamic_forward_proxy
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.clusters.dynamic_forward_proxy.v3.ClusterConfig
+          dns_cache_config:
+            name: dynamic_forward_proxy_cache_config
+            dns_lookup_family: V4_ONLY
+      transport_socket:
+        name: envoy.transport_sockets.tls
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+          common_tls_context:
+            validation_context:
+              trusted_ca:
+                filename: ca.crt
+            tls_certificates:
+              - certificate_chain:
+                  filename: customer01.example.com.crt
+                private_key:
+                  filename: customer01.example.com.key
 ```
 
-> Yes, you can install the `envoy` binary using [func-e](https://func-e.io/).
+This cluster connects to the "back"-proxy which validates the attached certificate chain, here
+we simply check if the cert is signed by a trusted CA.
 
-And in another tab, by using the `app1.example.com` client certificate:
+```yaml
+
+          transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              require_client_certificate: true
+              common_tls_context:
+                validation_context:
+                  trusted_ca:
+                    filename: ca.crt
+                tls_certificates:
+                  - certificate_chain:
+                      filename: hello.com.crt
+                    private_key:
+                      filename: hello.com.key
+```
+
+## Running the demo
+
+> Since I'm lazy, I registered the following to my `/etc/hosts`
+
+```
+127.0.0.1 example.com
+127.0.0.1 hello.com
+```
+
+Run the "front" proxy:
+
+```
+$  ~/.func-e/versions/1.21.0/bin/envoy -c front.yaml --use-dynamic-base-id
+```
+
+> Yes, you can download the `envoy` binary from https://func-e.io/.
+
+Also, in another terminal session, run the "back" proxy:
 
 ```console
-$ curl https://example.com:10000 --cacert ca.crt --cert app1.example.com.crt --key app1.example.com.key -v
+$  ~/.func-e/versions/1.21.0/bin/envoy -c back.yaml --use-dynamic-base-id
+```
+
+Afterward, acts as a client, e.g. `customer01`:
+
+```console
+$ curl https://example.com:10000/app1 --cacert ca.crt --cert api-client.customer01.com.crt --key api-client.customer01.com.key -v
+...
 < HTTP/1.1 200 OK
-< date: Sun, 03 Apr 2022 08:02:26 GMT
+< date: Tue, 05 Apr 2022 09:20:08 GMT
 < content-type: application/json
-< content-length: 557
+< content-length: 624
 < server: envoy
 < access-control-allow-origin: *
 < access-control-allow-credentials: true
-< x-envoy-upstream-service-time: 651
+< x-envoy-upstream-service-time: 870
 <
 {
   "args": {},
@@ -69,30 +137,59 @@ $ curl https://example.com:10000 --cacert ca.crt --cert app1.example.com.crt --k
   "form": {},
   "headers": {
     "Accept": "*/*",
-    "Host": "httpbin.org",
+    "Host": "hello.com",
     "User-Agent": "curl/7.68.0",
-    "X-Amzn-Trace-Id": "Root=1-62495492-12e48455193e572b4a20df77",
+    "X-Amzn-Trace-Id": "Root=1-624c09c8-2f70673a5168644b64c114cb",
     "X-Envoy-Expected-Rq-Timeout-Ms": "15000",
-    "X-Envoy-Original-Path": "/",
-    "X-Forwarded-Client-Cert": "Hash=13ee0d38e5517a257b9f2e9f38b0c9543f8312a8f40c32b5ad3358c9f1a6c9b3;DNS=app1.example.com"
+    "X-Forwarded-Client-Cert": "Hash=94b0743a0159e4003ed1d84303bda2db53693f3b635c4a23447f9df6657444ac;DNS=api-client.customer01.com,Hash=6659134bcf5b206e7f10660dd5e8531fb67b4327a6aa18c18c2aacbc230ddaaf;DNS=customer01.example.com"
   },
   "json": null,
   "method": "GET",
   "origin": "34.124.236.29",
-  "url": "https://httpbin.org/anything/app1"
+  "url": "https://hello.com/anything/app1"
+```
+
+And as `customer02`:
+
+```
+$ curl https://example.com:10000/app1 --cacert ca.crt --cert api-client.customer02.com.crt --key api-client.customer02.com.key -v
+< HTTP/1.1 200 OK
+< date: Tue, 05 Apr 2022 09:21:10 GMT
+< content-type: application/json
+< content-length: 624
+< server: envoy
+< access-control-allow-origin: *
+< access-control-allow-credentials: true
+< x-envoy-upstream-service-time: 220
+<
+{
+  "args": {},
+  "data": "",
+  "files": {},
+  "form": {},
+  "headers": {
+    "Accept": "*/*",
+    "Host": "hello.com",
+    "User-Agent": "curl/7.68.0",
+    "X-Amzn-Trace-Id": "Root=1-624c0a06-6e9895c61b7f9cb113aa4ad1",
+    "X-Envoy-Expected-Rq-Timeout-Ms": "15000",
+    "X-Forwarded-Client-Cert": "Hash=7f874453537499e6816a1b3ea5dbbfc5728ccadcd1c18717b16ea3783e3c0936;DNS=api-client.customer02.com,Hash=00e0d25f8b65c9185457a8f0ad8d083450a079c2ef9f20f24ff6f11dfd48b915;DNS=customer02.example.com"
+  },
+  "json": null,
+  "method": "GET",
+  "origin": "34.124.236.29",
+  "url": "https://hello.com/anything/app1"
 }
 ```
 
-See that the `gateway` rewrites the path to: `/anything/app1` (that's expected!).
+Accessing `/app2` also can be done:
 
-Let's try with the `app2.example.com` client certificate:
-
-```console
-$ curl https://example.com:10000 --cacert ca.crt --cert app2.example.com.crt --key app2.example.com.key -v
+```
+$ curl https://example.com:10000/app2 --cacert ca.crt --cert api-client.customer01.com.crt --key api-client.customer01.com.key -v
 < HTTP/1.1 200 OK
-< date: Sun, 03 Apr 2022 08:03:38 GMT
+< date: Tue, 05 Apr 2022 09:21:57 GMT
 < content-type: application/json
-< content-length: 557
+< content-length: 624
 < server: envoy
 < access-control-allow-origin: *
 < access-control-allow-credentials: true
@@ -105,21 +202,24 @@ $ curl https://example.com:10000 --cacert ca.crt --cert app2.example.com.crt --k
   "form": {},
   "headers": {
     "Accept": "*/*",
-    "Host": "httpbin.org",
+    "Host": "hello.com",
     "User-Agent": "curl/7.68.0",
-    "X-Amzn-Trace-Id": "Root=1-624954da-49737bf4255cec9741a051f5",
+    "X-Amzn-Trace-Id": "Root=1-624c0a35-47564d9b186df9ed0d866de7",
     "X-Envoy-Expected-Rq-Timeout-Ms": "15000",
-    "X-Envoy-Original-Path": "/",
-    "X-Forwarded-Client-Cert": "Hash=4c293ae780318973ff6220ce2beffbbc006225fa96a837483c9f20afbac61263;DNS=app2.example.com"
+    "X-Forwarded-Client-Cert": "Hash=94b0743a0159e4003ed1d84303bda2db53693f3b635c4a23447f9df6657444ac;DNS=api-client.customer01.com,Hash=6659134bcf5b206e7f10660dd5e8531fb67b4327a6aa18c18c2aacbc230ddaaf;DNS=customer01.example.com"
   },
   "json": null,
   "method": "GET",
   "origin": "34.124.236.29",
-  "url": "https://httpbin.org/anything/app2"
+  "url": "https://hello.com/anything/app2"
 }
 ```
 
-Yes, now it is `/anything/app2`!
+## The little Lua script
+
+Yes, there is this little Lua script that transform the `:authority`, from `example.com:10000` to
+`hello.com:10001`. We forward the `:path` header but before that, we prepend that with `/anything`
+prefix when "forwarding" the request from the "front" to the "back".
 
 ## Inspecting the certificate
 
