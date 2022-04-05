@@ -3,6 +3,8 @@
 This is an interesting use-case, where we have a "gateway" that routes requests based on the
 extracted [`x-forwarded-client-cert`](https://www.envoyproxy.io/docs/envoy/latest/configuration/http/http_conn_man/headers#x-forwarded-client-cert).
 
+![peers](https://user-images.githubusercontent.com/73152/161724024-5e68f436-a719-4e3a-ad83-d640068e0d51.png)
+
 Suppose we have four clients, each of them has a certificate pair (`api-client.customer0{1..4}.com.{crt,key}`).
 
 Each client connects to gateway, and terminated (validated via mTLS, with provided validation contexts: trusted CA and hash).
