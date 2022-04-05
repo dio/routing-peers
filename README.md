@@ -7,6 +7,8 @@ Suppose we have `example.com` hosting our `gateway`, and we have `app1.example.c
 `app2.example.com` as the clients. Each client has its certificate pair, annotated with its `DNS`,
 encoded as the certificate's `SAN`.
 
+![routing-peers](https://user-images.githubusercontent.com/73152/161420422-e0647db2-6aa5-4750-a155-d9a5f7fc2400.png)
+
 As an example, the following is the SAN of `app1.example.com` client certificate.
 
 ```
@@ -35,7 +37,7 @@ The route matching entry for `app1.example.com` is done as the following:
                             cluster: service_httpbin
 ```
 
-With the given ['config.yaml'](./config.yaml),
+With the given [`config.yaml`](./config.yaml),
 
 > Note: Since I'm lazy, you need to add: `127.0.0.1 example.com` entry to your `/etc/hosts` to make the DNS resolution works.
 
@@ -124,7 +126,7 @@ Yes, now it is `/anything/app2`!
 You can use [`step`](https://smallstep.com/docs/step-cli) CLI to inspect the certificates.
 
 ```console
-$ step inspect app1.example.com.crt
+$ step certificate inspect app1.example.com.crt
 Certificate:
     Data:
         Version: 3 (0x2)
